@@ -2,8 +2,16 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getSocket } from './socket';
 import * as api from './api';
 import Avatar from './Avatar';
+import GroupAvatar from './GroupAvatar';
 import { useVoiceCall } from './useVoiceCall';
 import VoiceCallOverlay from './VoiceCallOverlay';
+
+function convTitle(conv) {
+  if (!conv) return '';
+  if (conv.isGroup) return conv.name || 'Group';
+  const u = conv.otherUser;
+  return u?.display_name || u?.username || '';
+}
 
 export default function Chat({ user, onLogout }) {
   const [conversations, setConversations] = useState([]);
@@ -13,6 +21,10 @@ export default function Chat({ user, onLogout }) {
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
+  const [newChatMode, setNewChatMode] = useState('direct');
+  const [groupName, setGroupName] = useState('');
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [inputValue, setInputValue] = useState('');
   const [listError, setListError] = useState('');
@@ -208,6 +220,66 @@ export default function Chat({ user, onLogout }) {
     }
   };
 
+  const resetNewChatForm = () => {
+    setSearchTerm('');
+    setUsers([]);
+    setGroupName('');
+    setGroupMembers([]);
+    setListError('');
+  };
+
+  const openNewChat = (mode) => {
+    setNewChatMode(mode);
+    setShowNewChat(true);
+    resetNewChatForm();
+  };
+
+  const addGroupMember = (u) => {
+    if (!u?.id || u.id === user.id) return;
+    setGroupMembers((prev) => (prev.some((m) => m.id === u.id) ? prev : [...prev, u]));
+    setSearchTerm('');
+    setUsers([]);
+  };
+
+  const removeGroupMember = (userId) => {
+    setGroupMembers((prev) => prev.filter((m) => m.id !== userId));
+  };
+
+  const createGroup = async (e) => {
+    if (e) e.preventDefault();
+    const name = groupName.trim();
+    if (!name) {
+      setListError('Enter a group name.');
+      return;
+    }
+    if (groupMembers.length < 1) {
+      setListError('Add at least one member.');
+      return;
+    }
+    setListError('');
+    setCreatingGroup(true);
+    try {
+      const conv = await api.createGroup(name, groupMembers.map((m) => m.id));
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === conv.id)) {
+          return prev.map((c) => (c.id === conv.id ? { ...c, ...conv } : c));
+        }
+        return [conv, ...prev];
+      });
+      setSelectedId(conv.id);
+      setCurrentConv(conv);
+      setMessages(conv.messages || []);
+      setShowNewChat(false);
+      resetNewChatForm();
+      if (isMobile) setMobileChatOpen(true);
+    } catch (err) {
+      console.error(err);
+      setListError(err?.message || 'Could not create group.');
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
+
   const startChat = (otherUser) => {
     setListError('');
     setStartingChat(true);
@@ -256,7 +328,9 @@ export default function Chat({ user, onLogout }) {
     if (isMobile) setMobileChatOpen(true);
   };
 
-  const other = currentConv?.otherUser;
+  const isGroup = !!currentConv?.isGroup;
+  const other = isGroup ? null : currentConv?.otherUser;
+  const memberCount = isGroup ? (currentConv?.members?.length ?? 0) : 0;
 
   const switchToConversation = useCallback((convId) => {
     if (convId == null) return;
@@ -287,16 +361,71 @@ export default function Chat({ user, onLogout }) {
       <VoiceCallOverlay voice={voice} peerUser={other} />
       <aside className="sidebar">
         <header className="sidebar-header">
-          <h1>Chat</h1>
-          <div className="user-pill">
-            <Avatar user={user} size={28} presence={!!socket?.connected} />
-            <span className="user-pill-name">{user.display_name || user.username}</span>
+          <div className="brand">
+            <div className="brand-logo" aria-hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+            </div>
+            <div className="brand-text">
+              <h1>Nexus</h1>
+              <span className="brand-tagline">Messages</span>
+            </div>
           </div>
-          <button className="logout-btn" onClick={onLogout} type="button">Logout</button>
+          <div className="sidebar-header-actions">
+            <div className="user-pill">
+              <Avatar user={user} size={28} presence={!!socket?.connected} />
+              <span className="user-pill-name">{user.display_name || user.username}</span>
+            </div>
+            <button className="btn-ghost btn-sm logout-btn" onClick={onLogout} type="button">Logout</button>
+          </div>
         </header>
         {showNewChat ? (
           <>
-            <div className="new-chat-header">New chat</div>
+            <div className="new-chat-header new-chat-header--tabs">
+              <button
+                type="button"
+                className={`new-chat-tab ${newChatMode === 'direct' ? 'active' : ''}`}
+                onClick={() => { setNewChatMode('direct'); resetNewChatForm(); }}
+              >
+                Direct
+              </button>
+              <button
+                type="button"
+                className={`new-chat-tab ${newChatMode === 'group' ? 'active' : ''}`}
+                onClick={() => { setNewChatMode('group'); resetNewChatForm(); }}
+              >
+                Group
+              </button>
+            </div>
+            {newChatMode === 'group' && (
+              <form className="group-create-form" onSubmit={createGroup}>
+                <input
+                  type="text"
+                  placeholder="Group name"
+                  value={groupName}
+                  onChange={(e) => { setGroupName(e.target.value); setListError(''); }}
+                  maxLength={100}
+                />
+                {groupMembers.length > 0 && (
+                  <div className="group-member-chips">
+                    {groupMembers.map((m) => (
+                      <span key={m.id} className="group-member-chip">
+                        {m.display_name || m.username}
+                        <button type="button" onClick={() => removeGroupMember(m.id)} aria-label="Remove">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  className="btn-primary btn-sm"
+                  disabled={creatingGroup || !groupName.trim() || groupMembers.length < 1}
+                >
+                  {creatingGroup ? 'Creating…' : 'Create group'}
+                </button>
+              </form>
+            )}
             <form className="new-chat-search" onSubmit={handleSearch}>
               <input
                 type="text"
@@ -308,32 +437,61 @@ export default function Chat({ user, onLogout }) {
                   setUsers([]);
                 }}
               />
-              <button type="submit" className="logout-btn" style={{ padding: '6px 12px' }}>
+              <button type="submit" className="btn-primary btn-sm">
                 Search
               </button>
             </form>
             {listError && <div key="list-error" className="sidebar-error">{listError}</div>}
-            {startingChat && <div key="sidebar-loading" className="sidebar-loading">Opening chat…</div>}
+            {(startingChat || creatingGroup) && (
+              <div key="sidebar-loading" className="sidebar-loading">
+                {creatingGroup ? 'Creating group…' : 'Opening chat…'}
+              </div>
+            )}
             <div className="conversation-list">
               {users.map((u) => (
                 <button
                   key={u.id}
                   type="button"
                   className="user-list-item"
-                  onClick={() => startChat(u)}
-                  disabled={startingChat}
+                  onClick={() => (newChatMode === 'group' ? addGroupMember(u) : startChat(u))}
+                  disabled={startingChat || creatingGroup}
                 >
                   <Avatar user={u} size={48} presence={isUserOnline(u.id)} />
                   <span className="name">{u.display_name || u.username}</span>
+                  {newChatMode === 'group' && groupMembers.some((m) => m.id === u.id) && (
+                    <span className="group-added-label">Added</span>
+                  )}
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              className="new-chat-back-btn"
+              onClick={() => { setShowNewChat(false); resetNewChatForm(); }}
+            >
+              ← Back to chats
+            </button>
           </>
         ) : (
           <>
-            <div className="new-chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Conversations</span>
-              <button type="button" className="logout-btn" onClick={() => { setShowNewChat(true); setListError(''); }} style={{ padding: '4px 10px' }}>+ New</button>
+            <div className="new-chat-header new-chat-header--actions">
+              <span className="section-label">Conversations</span>
+              <div className="new-chat-actions">
+                <button type="button" className="btn-secondary btn-sm" onClick={() => openNewChat('direct')}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  Chat
+                </button>
+                <button type="button" className="btn-primary btn-sm" onClick={() => openNewChat('group')}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                  Group
+                </button>
+              </div>
             </div>
             {listError && <div key="list-error" className="sidebar-error">{listError}</div>}
             <div className="conversation-list">
@@ -344,9 +502,13 @@ export default function Chat({ user, onLogout }) {
                   className={`conversation-item ${c.id === selectedId ? 'active' : ''}`}
                   onClick={() => selectConversation(c.id)}
                 >
-                  <Avatar user={c.otherUser} size={48} presence={isUserOnline(c.otherUser?.id)} />
+                  {c.isGroup ? (
+                    <GroupAvatar name={c.name} size={48} />
+                  ) : (
+                    <Avatar user={c.otherUser} size={48} presence={isUserOnline(c.otherUser?.id)} />
+                  )}
                   <div className="meta">
-                    <p className="name">{c.otherUser?.display_name || c.otherUser?.username}</p>
+                    <p className="name">{convTitle(c)}</p>
                     <p className="preview">{c.lastMessage || 'No messages yet'}</p>
                   </div>
                 </button>
@@ -358,8 +520,25 @@ export default function Chat({ user, onLogout }) {
       <main className="chat-area">
         {!selectedId ? (
           <div className="empty-chat empty-chat--desktop-only">
-            <p>Select a conversation or start a new chat</p>
-            <small>Choose a chat from the list, or &quot;+ New&quot; to message someone</small>
+            <div className="empty-chat-icon" aria-hidden>
+              <svg viewBox="0 0 80 80" fill="none">
+                <circle cx="40" cy="40" r="38" stroke="url(#emptyGrad)" strokeWidth="2" opacity="0.4" />
+                <path d="M24 32c0-4.4 3.6-8 8-8h16c4.4 0 8 3.6 8 8v6c0 4.4-3.6 8-8 8H36l-8 6.5V46c-4.4 0-8-3.6-8-8v-6z" fill="url(#emptyGrad)" opacity="0.85" />
+                <defs>
+                  <linearGradient id="emptyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#14b8a6" />
+                    <stop offset="100%" stopColor="#6366f1" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <h2>Welcome to Nexus</h2>
+            <p>Select a conversation or start a new chat to begin messaging</p>
+            <div className="empty-chat-hints">
+              <span className="hint-chip">Direct messages</span>
+              <span className="hint-chip">Group chats</span>
+              <span className="hint-chip">Voice calls</span>
+            </div>
           </div>
         ) : (
           <>
@@ -376,41 +555,55 @@ export default function Chat({ user, onLogout }) {
                   </svg>
                 </button>
               )}
-              <Avatar user={other} size={42} presence={isUserOnline(other?.id)} />
+              {isGroup ? (
+                <GroupAvatar name={currentConv?.name} size={42} />
+              ) : (
+                <Avatar user={other} size={42} presence={isUserOnline(other?.id)} />
+              )}
               <div className="chat-header-main">
-                <h2 className="name">{other?.display_name || other?.username}</h2>
-                <p
-                  className={`chat-header-presence ${isUserOnline(other?.id) ? 'chat-header-presence--online' : ''}`}
-                >
-                  {isUserOnline(other?.id) ? 'Online' : 'Offline'}
+                <h2 className="name">{convTitle(currentConv)}</h2>
+                <p className={`chat-header-presence ${!isGroup && isUserOnline(other?.id) ? 'chat-header-presence--online' : ''}`}>
+                  {isGroup
+                    ? `${memberCount} members`
+                    : (isUserOnline(other?.id) ? 'Online' : 'Offline')}
                 </p>
               </div>
-              <button
-                type="button"
-                className="chat-call-btn"
-                onClick={() => voice.startCall()}
-                disabled={!other || voice.phase !== 'idle'}
-                title="Voice call"
-                aria-label="Start voice call"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden>
-                  <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
-                </svg>
-              </button>
+              {!isGroup && (
+                <button
+                  type="button"
+                  className="chat-call-btn"
+                  onClick={() => voice.startCall()}
+                  disabled={!other || voice.phase !== 'idle'}
+                  title="Voice call"
+                  aria-label="Start voice call"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden>
+                    <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
+                  </svg>
+                </button>
+              )}
             </header>
             <div className="chat-messages">
               {loading ? (
-                <div key="loading" className="empty-chat"><p>Loading…</p></div>
+                <div key="loading" className="chat-loading">
+                  <div className="loading-spinner" aria-hidden />
+                  <p>Loading messages…</p>
+                </div>
               ) : (
                 messages.map((msg, index) => {
                   const isMe = msg.sender_id === user.id;
                   const msgId = msg.id ?? msg.ID ?? `msg-${index}`;
                   const createdRaw = msg.created_at ?? msg.CREATED_AT ?? msg.createdAt;
                   const createdDate = parseCreatedAt(createdRaw);
-                  const canDelete = isMe; // always show delete icon for own messages; server enforces 5‑minute window
+                  const canDelete = isMe;
+                  const sender = msg.sender;
+                  const senderLabel = sender?.display_name || sender?.username;
                   return (
                     <div key={msgId} className={`message-row ${isMe ? 'me' : ''}`}>
                       <div className="message-bubble">
+                        {isGroup && !isMe && senderLabel && (
+                          <p className="message-sender-name">{senderLabel}</p>
+                        )}
                         {canDelete && (
                           <button
                             type="button"

@@ -82,6 +82,17 @@ export async function getOrCreateDirect(userId) {
   return data;
 }
 
+export async function createGroup(name, memberIds) {
+  const res = await fetch(`${API}/conversations/group`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ name, memberIds }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to create group');
+  return data;
+}
+
 export async function getConversation(id) {
   const res = await fetch(`${API}/conversations/${id}`, { headers: headers() });
   const data = await res.json().catch(() => ({}));

@@ -18,12 +18,12 @@ export default function Avatar({ user, size = 40, presence }) {
       }}
     >
       <div
-        className="avatar"
+        className="avatar avatar--gradient"
         style={{
           width: size,
           height: size,
           borderRadius: '50%',
-          background: color,
+          background: `linear-gradient(135deg, ${color} 0%, color-mix(in srgb, ${color} 70%, #000) 100%)`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

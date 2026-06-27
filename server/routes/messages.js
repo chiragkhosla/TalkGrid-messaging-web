@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { MongoMessage } = require('../mongo');
 const { authMiddleware } = require('../auth');
+const { emitToConversationMembers } = require('../conversationUtils');
 
 function createRouter(io) {
   const router = express.Router();
@@ -51,7 +52,6 @@ function createRouter(io) {
       display_name: senderRow.display_name ?? senderRow.DISPLAY_NAME,
       avatar_color: senderRow.avatar_color ?? senderRow.AVATAR_COLOR,
     } : null;
-    const other = db.prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ?').get(convId, req.user.id);
     const payload = {
       id: row?.id ?? row?.ID,
       conversation_id: row?.conversation_id ?? row?.CONVERSATION_ID ?? convId,
@@ -69,12 +69,7 @@ function createRouter(io) {
         console.error('MongoMessage create failed:', err.message);
       });
     }
-    if (io) {
-      const myId = String(req.user.id);
-      const otherId = other && String(other.user_id ?? other.USER_ID);
-      io.to('user:' + myId).emit('message:new', payload);
-      if (otherId) io.to('user:' + otherId).emit('message:new', payload);
-    }
+    emitToConversationMembers(io, convId, 'message:new', payload);
     res.status(201).json(payload);
   });
 
@@ -97,15 +92,9 @@ function createRouter(io) {
         return res.status(403).json({ error: 'Can only delete messages within 5 minutes' });
       }
     }
-    const other = db.prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ?').get(msg.conversation_id, req.user.id);
     db.prepare('DELETE FROM messages WHERE id = ?').run(id);
-    if (io) {
-      const myId = String(req.user.id);
-      const otherId = other && String(other.user_id ?? other.USER_ID);
-      const payload = { id, conversation_id: msg.conversation_id };
-      io.to('user:' + myId).emit('message:deleted', payload);
-      if (otherId) io.to('user:' + otherId).emit('message:deleted', payload);
-    }
+    const payload = { id, conversation_id: msg.conversation_id };
+    emitToConversationMembers(io, msg.conversation_id, 'message:deleted', payload);
     return res.status(204).end();
   });
 

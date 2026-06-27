@@ -7,6 +7,7 @@ const db = require('./db');
 const { connectMongo } = require('./mongo');
 const { verifyToken } = require('./auth');
 const registerVoiceHandlers = require('./voiceSignaling');
+const { emitToConversationMembers } = require('./conversationUtils');
 
 /** userId -> number of active socket connections (tabs / devices) */
 const presenceCounts = new Map();
@@ -86,14 +87,15 @@ io.on('connection', (socket) => {
     if (!member) return;
     db.prepare('INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)').run(convId, socket.userId, content.trim());
     const row = db.prepare('SELECT id, conversation_id, sender_id, content, created_at FROM messages WHERE id = last_insert_rowid()').get();
-    const sender = db.prepare('SELECT id, username, display_name, avatar_color FROM users WHERE id = ?').get(socket.userId);
-    const other = db.prepare(`
-      SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ?
-    `).get(convId, socket.userId);
+    const senderRow = db.prepare('SELECT id, username, display_name, avatar_color FROM users WHERE id = ?').get(socket.userId);
+    const sender = senderRow ? {
+      id: senderRow.id ?? senderRow.ID,
+      username: senderRow.username ?? senderRow.USERNAME,
+      display_name: senderRow.display_name ?? senderRow.DISPLAY_NAME,
+      avatar_color: senderRow.avatar_color ?? senderRow.AVATAR_COLOR,
+    } : null;
     const payload = { ...row, sender };
-    socket.emit('message:new', payload);
-    const otherId = other && (other.user_id ?? other.USER_ID);
-    if (otherId) io.to(`user:${otherId}`).emit('message:new', payload);
+    emitToConversationMembers(io, convId, 'message:new', payload);
   });
 
   socket.on('disconnect', () => {

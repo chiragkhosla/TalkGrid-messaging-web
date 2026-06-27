@@ -98,6 +98,12 @@ async function init() {
     db.run('CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);');
     db.run('CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);');
   } catch (_) {}
+  try {
+    db.run('ALTER TABLE conversations ADD COLUMN is_group INTEGER DEFAULT 0');
+  } catch (_) {}
+  try {
+    db.run('ALTER TABLE conversations ADD COLUMN name TEXT');
+  } catch (_) {}
 
   save();
   return db;
