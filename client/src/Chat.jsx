@@ -34,6 +34,9 @@ export default function Chat({ user, onLogout }) {
   );
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [onlineIds, setOnlineIds] = useState(() => new Set());
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
+  const [groupActionError, setGroupActionError] = useState('');
+  const [groupActionLoading, setGroupActionLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -127,6 +130,7 @@ export default function Chat({ user, onLogout }) {
       setMessages([]);
       setInputValue('');
       setLoading(false);
+      setShowGroupSettings(false);
       return;
     }
     setLoading(true);
@@ -175,15 +179,54 @@ export default function Chat({ user, onLogout }) {
       setMessages((prev) => prev.filter((m) => normalizeId(m.id ?? m.ID) !== targetId));
       loadConversations();
     };
+    const applyGroupConversation = (conv) => {
+      if (!conv?.id) return;
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conv.id ? { ...c, ...conv } : c))
+      );
+      if (selectedId === conv.id) {
+        setCurrentConv((prev) => ({ ...prev, ...conv }));
+      }
+    };
+    const onGroupUpdated = ({ conversationId, conversation }) => {
+      if (conversation) applyGroupConversation(conversation);
+      else loadConversations();
+    };
+    const onGroupRemoved = ({ conversationId }) => {
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      if (selectedId === conversationId) {
+        setSelectedId(null);
+        setCurrentConv(null);
+        setMessages([]);
+        setShowGroupSettings(false);
+        if (isMobile) setMobileChatOpen(false);
+      }
+    };
+    const onGroupDeleted = ({ conversationId }) => {
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      if (selectedId === conversationId) {
+        setSelectedId(null);
+        setCurrentConv(null);
+        setMessages([]);
+        setShowGroupSettings(false);
+        if (isMobile) setMobileChatOpen(false);
+      }
+    };
     socket.on('message:new', onNewMessage);
     socket.on('conversation:new', onNewConversation);
     socket.on('message:deleted', onDeletedMessage);
+    socket.on('group:updated', onGroupUpdated);
+    socket.on('group:removed', onGroupRemoved);
+    socket.on('group:deleted', onGroupDeleted);
     return () => {
       socket.off('message:new', onNewMessage);
       socket.off('conversation:new', onNewConversation);
       socket.off('message:deleted', onDeletedMessage);
+      socket.off('group:updated', onGroupUpdated);
+      socket.off('group:removed', onGroupRemoved);
+      socket.off('group:deleted', onGroupDeleted);
     };
-  }, [selectedId, loadConversations]);
+  }, [selectedId, loadConversations, isMobile]);
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();
@@ -331,6 +374,61 @@ export default function Chat({ user, onLogout }) {
   const isGroup = !!currentConv?.isGroup;
   const other = isGroup ? null : currentConv?.otherUser;
   const memberCount = isGroup ? (currentConv?.members?.length ?? 0) : 0;
+  const isGroupAdmin = isGroup && currentConv?.myRole === 'admin';
+
+  const handlePromoteMember = async (memberId) => {
+    if (!selectedId || !isGroupAdmin) return;
+    setGroupActionError('');
+    setGroupActionLoading(true);
+    try {
+      const conv = await api.promoteGroupAdmin(selectedId, memberId);
+      setCurrentConv((prev) => ({ ...prev, ...conv }));
+      setConversations((prev) => prev.map((c) => (c.id === conv.id ? { ...c, ...conv } : c)));
+    } catch (err) {
+      setGroupActionError(err?.message || 'Failed to promote member');
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleRemoveMember = async (memberId) => {
+    if (!selectedId || !isGroupAdmin) return;
+    if (!window.confirm('Remove this member from the group?')) return;
+    setGroupActionError('');
+    setGroupActionLoading(true);
+    try {
+      await api.removeGroupMemberFromChat(selectedId, memberId);
+      loadConversations();
+      if (selectedId) {
+        const conv = await api.getConversation(selectedId);
+        setCurrentConv(conv);
+      }
+    } catch (err) {
+      setGroupActionError(err?.message || 'Failed to remove member');
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    if (!selectedId || !isGroupAdmin) return;
+    if (!window.confirm('Delete this group permanently? This cannot be undone.')) return;
+    setGroupActionError('');
+    setGroupActionLoading(true);
+    try {
+      await api.deleteGroup(selectedId);
+      setConversations((prev) => prev.filter((c) => c.id !== selectedId));
+      setSelectedId(null);
+      setCurrentConv(null);
+      setMessages([]);
+      setShowGroupSettings(false);
+      if (isMobile) setMobileChatOpen(false);
+    } catch (err) {
+      setGroupActionError(err?.message || 'Failed to delete group');
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
 
   const switchToConversation = useCallback((convId) => {
     if (convId == null) return;
@@ -582,7 +680,79 @@ export default function Chat({ user, onLogout }) {
                   </svg>
                 </button>
               )}
+              {isGroup && (
+                <button
+                  type="button"
+                  className="chat-settings-btn"
+                  onClick={() => { setShowGroupSettings(true); setGroupActionError(''); }}
+                  title="Group settings"
+                  aria-label="Group settings"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="22" height="22" aria-hidden>
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
+              )}
             </header>
+            {showGroupSettings && isGroup && (
+              <div className="group-settings-backdrop" onClick={() => setShowGroupSettings(false)}>
+                <div className="group-settings-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Group settings">
+                  <header className="group-settings-header">
+                    <div>
+                      <h3>{convTitle(currentConv)}</h3>
+                      <p>{memberCount} members · {isGroupAdmin ? 'You are an admin' : 'Member'}</p>
+                    </div>
+                    <button type="button" className="group-settings-close" onClick={() => setShowGroupSettings(false)} aria-label="Close">×</button>
+                  </header>
+                  {groupActionError && <div className="group-settings-error">{groupActionError}</div>}
+                  <div className="group-settings-members">
+                    <p className="group-settings-label">Members</p>
+                    {(currentConv?.members || []).map((m) => (
+                      <div key={m.id} className="group-settings-member">
+                        <Avatar user={m} size={40} presence={isUserOnline(m.id)} />
+                        <div className="group-settings-member-info">
+                          <span className="name">{m.display_name || m.username}</span>
+                          {m.role === 'admin' && <span className="admin-badge">Admin</span>}
+                        </div>
+                        {isGroupAdmin && m.id !== user.id && m.role !== 'admin' && (
+                          <div className="group-settings-member-actions">
+                            <button
+                              type="button"
+                              className="btn-secondary btn-sm"
+                              disabled={groupActionLoading}
+                              onClick={() => handlePromoteMember(m.id)}
+                            >
+                              Make admin
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ghost btn-sm group-remove-btn"
+                              disabled={groupActionLoading}
+                              onClick={() => handleRemoveMember(m.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {isGroupAdmin && (
+                    <div className="group-settings-danger">
+                      <button
+                        type="button"
+                        className="group-delete-btn"
+                        disabled={groupActionLoading}
+                        onClick={handleDeleteGroup}
+                      >
+                        Delete group
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="chat-messages">
               {loading ? (
                 <div key="loading" className="chat-loading">

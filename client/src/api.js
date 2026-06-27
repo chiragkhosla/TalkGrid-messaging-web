@@ -121,3 +121,33 @@ export async function deleteMessage(id) {
     throw new Error(data.error || 'Failed to delete message');
   }
 }
+
+export async function promoteGroupAdmin(conversationId, userId) {
+  const res = await fetch(`${API}/conversations/${conversationId}/members/${userId}/admin`, {
+    method: 'PATCH',
+    headers: headers(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to promote member');
+  return data;
+}
+
+export async function removeGroupMemberFromChat(conversationId, userId) {
+  const res = await fetch(`${API}/conversations/${conversationId}/members/${userId}`, {
+    method: 'DELETE',
+    headers: headers(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to remove member');
+  return data;
+}
+
+export async function deleteGroup(conversationId) {
+  const res = await fetch(`${API}/conversations/${conversationId}`, {
+    method: 'DELETE',
+    headers: headers(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to delete group');
+  return data;
+}

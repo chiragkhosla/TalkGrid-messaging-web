@@ -6,6 +6,8 @@ const {
   rowId,
   formatUser,
   getMemberIds,
+  getMemberRole,
+  isGroupAdmin,
   emitToConversationMembers,
   isGroupConversation,
 } = require('../conversationUtils');
@@ -22,13 +24,17 @@ function getOtherMember(conversationId, myId) {
 
 function getMembers(conversationId) {
   const rows = db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.avatar_color
+    SELECT u.id, u.username, u.display_name, u.avatar_color, m.role
     FROM conversation_members m
     INNER JOIN users u ON u.id = m.user_id
     WHERE m.conversation_id = ?
-    ORDER BY u.display_name, u.username
+    ORDER BY CASE WHEN m.role = 'admin' THEN 0 ELSE 1 END, u.display_name, u.username
   `).all(conversationId);
-  return rows.map(formatUser).filter(Boolean);
+  return rows.map((r) => {
+    const user = formatUser(r);
+    if (!user) return null;
+    return { ...user, role: r.role ?? r.ROLE ?? 'member' };
+  }).filter(Boolean);
 }
 
 function getLastMessage(conversationId) {
@@ -61,6 +67,7 @@ function buildConversationSummary(conversationId, myId) {
       ...base,
       name: (convRow.name ?? convRow.NAME ?? 'Group').trim() || 'Group',
       members: getMembers(conversationId),
+      myRole: getMemberRole(conversationId, myId),
     };
   }
 
@@ -97,6 +104,15 @@ function getMessages(conversationId) {
   }));
 }
 
+function notifyGroupUpdate(io, convId) {
+  if (!io) return;
+  for (const uid of getMemberIds(convId)) {
+    const conv = getConversationById(convId, uid);
+    if (conv) {
+      io.to(`user:${String(uid)}`).emit('group:updated', { conversationId: convId, conversation: conv });
+    }
+  }
+}
 function notifyNewConversation(io, convId, participantIds) {
   if (!io) return;
   for (const uid of participantIds) {
@@ -208,10 +224,11 @@ function createRouter(io) {
 
       const allMemberIds = [myId, ...memberIds];
       const insertMember = db.prepare(
-        'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?)'
+        'INSERT INTO conversation_members (conversation_id, user_id, role) VALUES (?, ?, ?)'
       );
-      for (const uid of allMemberIds) {
-        insertMember.run(convId, uid);
+      insertMember.run(convId, myId, 'admin');
+      for (const uid of memberIds) {
+        insertMember.run(convId, uid, 'member');
       }
 
       if (MongoConversation) {
@@ -263,6 +280,7 @@ function createRouter(io) {
           isGroup: true,
           name: (r.name ?? r.NAME ?? 'Group').trim() || 'Group',
           members: getMembers(cid),
+          myRole: getMemberRole(cid, req.user.id),
           lastMessage,
           lastAt,
         };
@@ -279,6 +297,102 @@ function createRouter(io) {
     }).filter(Boolean);
 
     res.json(list);
+  });
+
+  router.patch('/:id/members/:userId/admin', (req, res) => {
+    try {
+      const myId = Number(req.user.id);
+      const convId = parseInt(req.params.id, 10);
+      const targetId = parseInt(req.params.userId, 10);
+      if (Number.isNaN(convId) || Number.isNaN(targetId)) {
+        return res.status(400).json({ error: 'Invalid id' });
+      }
+      if (!isGroupConversation(convId)) {
+        return res.status(400).json({ error: 'Not a group conversation' });
+      }
+      if (!isGroupAdmin(convId, myId)) {
+        return res.status(403).json({ error: 'Only admins can promote members' });
+      }
+      const member = db.prepare(
+        'SELECT role FROM conversation_members WHERE conversation_id = ? AND user_id = ?'
+      ).get(convId, targetId);
+      if (!member) return res.status(404).json({ error: 'Member not found' });
+      if ((member.role ?? member.ROLE) === 'admin') {
+        return res.status(400).json({ error: 'User is already an admin' });
+      }
+      db.prepare(
+        "UPDATE conversation_members SET role = 'admin' WHERE conversation_id = ? AND user_id = ?"
+      ).run(convId, targetId);
+      notifyGroupUpdate(io, convId);
+      const conv = getConversationById(convId, myId);
+      return res.json(conv);
+    } catch (err) {
+      console.error('PATCH /:id/members/:userId/admin error:', err);
+      return res.status(500).json({ error: err.message || 'Failed to promote member' });
+    }
+  });
+
+  router.delete('/:id/members/:userId', (req, res) => {
+    try {
+      const myId = Number(req.user.id);
+      const convId = parseInt(req.params.id, 10);
+      const targetId = parseInt(req.params.userId, 10);
+      if (Number.isNaN(convId) || Number.isNaN(targetId)) {
+        return res.status(400).json({ error: 'Invalid id' });
+      }
+      if (!isGroupConversation(convId)) {
+        return res.status(400).json({ error: 'Not a group conversation' });
+      }
+      if (!isGroupAdmin(convId, myId)) {
+        return res.status(403).json({ error: 'Only admins can remove members' });
+      }
+      if (targetId === myId) {
+        return res.status(400).json({ error: 'Admins cannot remove themselves' });
+      }
+      const member = db.prepare(
+        'SELECT role FROM conversation_members WHERE conversation_id = ? AND user_id = ?'
+      ).get(convId, targetId);
+      if (!member) return res.status(404).json({ error: 'Member not found' });
+      if ((member.role ?? member.ROLE) === 'admin') {
+        return res.status(400).json({ error: 'Cannot remove another admin' });
+      }
+      db.prepare(
+        'DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?'
+      ).run(convId, targetId);
+      io.to(`user:${String(targetId)}`).emit('group:removed', { conversationId: convId });
+      notifyGroupUpdate(io, convId);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /:id/members/:userId error:', err);
+      return res.status(500).json({ error: err.message || 'Failed to remove member' });
+    }
+  });
+
+  router.delete('/:id', (req, res) => {
+    try {
+      const myId = Number(req.user.id);
+      const convId = parseInt(req.params.id, 10);
+      if (Number.isNaN(convId)) {
+        return res.status(400).json({ error: 'Invalid id' });
+      }
+      if (!isGroupConversation(convId)) {
+        return res.status(400).json({ error: 'Not a group conversation' });
+      }
+      if (!isGroupAdmin(convId, myId)) {
+        return res.status(403).json({ error: 'Only admins can delete the group' });
+      }
+      const memberIds = getMemberIds(convId);
+      db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(convId);
+      db.prepare('DELETE FROM conversation_members WHERE conversation_id = ?').run(convId);
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(convId);
+      for (const uid of memberIds) {
+        io.to(`user:${String(uid)}`).emit('group:deleted', { conversationId: convId });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /:id error:', err);
+      return res.status(500).json({ error: err.message || 'Failed to delete group' });
+    }
   });
 
   router.get('/:id', (req, res) => {

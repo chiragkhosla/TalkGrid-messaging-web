@@ -33,6 +33,18 @@ function emitToConversationMembers(io, conversationId, event, payload) {
   }
 }
 
+function getMemberRole(conversationId, userId) {
+  const row = db
+    .prepare('SELECT role FROM conversation_members WHERE conversation_id = ? AND user_id = ?')
+    .get(conversationId, userId);
+  if (!row) return null;
+  return row.role ?? row.ROLE ?? 'member';
+}
+
+function isGroupAdmin(conversationId, userId) {
+  return getMemberRole(conversationId, userId) === 'admin';
+}
+
 function isGroupConversation(conversationId) {
   const row = db.prepare('SELECT is_group FROM conversations WHERE id = ?').get(conversationId);
   if (!row) return false;
@@ -44,6 +56,8 @@ module.exports = {
   rowId,
   formatUser,
   getMemberIds,
+  getMemberRole,
+  isGroupAdmin,
   emitToConversationMembers,
   isGroupConversation,
 };

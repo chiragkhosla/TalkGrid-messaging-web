@@ -106,6 +106,41 @@ async function init() {
   try {
     db.run('ALTER TABLE conversations ADD COLUMN name TEXT');
   } catch (_) {}
+  try {
+    db.run("ALTER TABLE conversation_members ADD COLUMN role TEXT DEFAULT 'member'");
+  } catch (_) {}
+
+  // Ensure each existing group has at least one admin (earliest joined member)
+  const groupRows = [];
+  const groupStmt = db.prepare('SELECT id FROM conversations WHERE COALESCE(is_group, 0) = 1');
+  while (groupStmt.step()) groupRows.push(groupStmt.getAsObject());
+  groupStmt.free();
+  for (const g of groupRows) {
+    const gid = g.id ?? g.ID;
+    if (!gid) continue;
+    const adminCheck = db.prepare(
+      "SELECT 1 FROM conversation_members WHERE conversation_id = ? AND role = 'admin' LIMIT 1"
+    );
+    adminCheck.bind([gid]);
+    const hasAdmin = adminCheck.step();
+    adminCheck.free();
+    if (hasAdmin) continue;
+    const firstStmt = db.prepare(
+      'SELECT user_id FROM conversation_members WHERE conversation_id = ? ORDER BY joined_at ASC LIMIT 1'
+    );
+    firstStmt.bind([gid]);
+    const first = firstStmt.step() ? firstStmt.getAsObject() : null;
+    firstStmt.free();
+    const uid = first && (first.user_id ?? first.USER_ID);
+    if (uid) {
+      const upd = db.prepare(
+        "UPDATE conversation_members SET role = 'admin' WHERE conversation_id = ? AND user_id = ?"
+      );
+      upd.bind([gid, uid]);
+      upd.step();
+      upd.free();
+    }
+  }
 
   save();
   return db;
