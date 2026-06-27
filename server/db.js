@@ -18,9 +18,9 @@ function save() {
 }
 
 function prepare(sql) {
-  const stmt = getDb().prepare(sql);
   return {
     run(...params) {
+      const stmt = getDb().prepare(sql);
       if (params.length) stmt.bind(params);
       stmt.step();
       stmt.free();
@@ -34,12 +34,14 @@ function prepare(sql) {
       return { lastInsertRowid };
     },
     get(...params) {
+      const stmt = getDb().prepare(sql);
       if (params.length) stmt.bind(params);
       const row = stmt.step() ? stmt.getAsObject() : null;
       stmt.free();
       return row;
     },
     all(...params) {
+      const stmt = getDb().prepare(sql);
       if (params.length) stmt.bind(params);
       const rows = [];
       while (stmt.step()) rows.push(stmt.getAsObject());
