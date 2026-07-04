@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
@@ -52,7 +52,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/conversations', require('./routes/conversations')(io));
 app.use('/api/messages', require('./routes/messages')(io));
-
+app.use('/api/status', require('./routes/status'));
 // Socket.io: authenticate by token
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;

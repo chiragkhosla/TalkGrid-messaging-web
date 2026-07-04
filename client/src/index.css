@@ -1735,3 +1735,208 @@ a {
     padding-left: 52px;
   }
 }
+
+
+/* —— Status bar —— */
+.status-bar {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.status-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.status-bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 68px;
+  padding: 0;
+}
+
+.status-avatar-ring {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: var(--input-bg);
+  border: 2px solid var(--border-strong);
+  transition: border-color 0.2s;
+}
+
+.status-avatar-ring--unseen {
+  background: var(--gradient-brand);
+  border: none;
+  padding: 3px;
+}
+
+.status-avatar-ring--unseen .avatar {
+  border: 2px solid var(--bg-panel-solid);
+}
+
+.status-avatar-ring--mine {
+  border-color: rgba(20, 184, 166, 0.4);
+}
+
+.status-add-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gradient-brand);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  border: 2px solid var(--bg-panel-solid);
+  box-shadow: 0 2px 8px var(--accent-glow);
+  cursor: pointer;
+}
+
+.status-bar-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 68px;
+}
+
+/* —— Status viewer —— */
+.status-page {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+}
+
+.status-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
+}
+
+.status-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-actions .delete-btn,
+.status-actions .close-btn {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.status-actions .delete-btn {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+.status-actions .delete-btn:hover {
+  background: rgba(239, 68, 68, 1);
+}
+
+.status-actions .close-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.status-actions .close-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.status-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.status-page .arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  cursor: pointer;
+  z-index: 2;
+  user-select: none;
+}
+
+.status-page .arrow:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.status-page .arrow.left {
+  left: 16px;
+}
+
+.status-page .arrow.right {
+  right: 16px;
+}
+
+@media (max-width: 767px) {
+  .status-header {
+    padding-top: max(16px, env(safe-area-inset-top, 0px));
+  }
+}

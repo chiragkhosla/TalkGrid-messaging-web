@@ -96,6 +96,19 @@ async function init() {
       FOREIGN KEY (sender_id) REFERENCES users(id)
     );
   `);
+  db.run(`
+  CREATE TABLE IF NOT EXISTS status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    media_url TEXT NOT NULL,
+    type TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+`);
+try {
+  db.run('CREATE INDEX IF NOT EXISTS idx_status_created ON status(created_at);');
+} catch (_) {}
   try {
     db.run('CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);');
     db.run('CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);');
