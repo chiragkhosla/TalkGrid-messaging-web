@@ -507,6 +507,8 @@ a {
 }
 
 .chat-header {
+  position: relative;
+  z-index: 30;
   padding: 14px 22px;
   background: var(--bg-panel);
   backdrop-filter: blur(20px);
@@ -1229,7 +1231,15 @@ a {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   box-shadow: 0 12px 32px var(--shadow-lg);
-  z-index: 40;
+  z-index: 50;
+}
+
+.chat-action-error {
+  padding: 10px 16px;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  font-size: 0.875rem;
 }
 
 .chat-menu-item {

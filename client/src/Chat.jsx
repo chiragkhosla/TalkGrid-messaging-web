@@ -41,6 +41,7 @@ export default function Chat({ user, onLogout }) {
   const [groupActionLoading, setGroupActionLoading] = useState(false);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [deletingChat, setDeletingChat] = useState(false);
+  const [chatActionError, setChatActionError] = useState('');
 const [statuses, setStatuses] = useState([]);
 const [selectedStatuses, setSelectedStatuses] = useState(null);
 
@@ -62,13 +63,13 @@ const [selectedStatuses, setSelectedStatuses] = useState(null);
 
   useEffect(() => {
     if (!showChatMenu) return;
-    const onPointerDown = (e) => {
+    const onClickOutside = (e) => {
       if (chatMenuRef.current && !chatMenuRef.current.contains(e.target)) {
         setShowChatMenu(false);
       }
     };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
+    document.addEventListener('click', onClickOutside);
+    return () => document.removeEventListener('click', onClickOutside);
   }, [showChatMenu]);
 
   useEffect(() => {
@@ -161,6 +162,7 @@ useEffect(() => {
       return;
     }
     setShowChatMenu(false);
+    setChatActionError('');
     setLoading(true);
     api.getConversation(selectedId).then((data) => {
       setCurrentConv(data);
@@ -467,18 +469,21 @@ useEffect(() => {
     }
   };
 
-  const clearActiveChat = () => {
-    setConversations((prev) => prev.filter((c) => c.id !== selectedId));
+  const clearActiveChat = (convId) => {
+    const id = Number(convId);
+    setConversations((prev) => prev.filter((c) => Number(c.id) !== id));
     setSelectedId(null);
     setCurrentConv(null);
     setMessages([]);
     setShowGroupSettings(false);
     setShowChatMenu(false);
+    setChatActionError('');
     if (isMobile) setMobileChatOpen(false);
   };
 
   const handleDeleteChat = async () => {
-    if (!selectedId || deletingChat) return;
+    const convId = selectedId;
+    if (convId == null || deletingChat) return;
     const deleteEntireGroup = isOnlyGroupAdmin;
     const confirmMessage = deleteEntireGroup
       ? 'Delete this group permanently for all members? This cannot be undone.'
@@ -489,22 +494,22 @@ useEffect(() => {
 
     setListError('');
     setGroupActionError('');
+    setChatActionError('');
     setDeletingChat(true);
     setShowChatMenu(false);
     try {
       if (deleteEntireGroup) {
-        await api.deleteGroup(selectedId);
+        await api.deleteGroup(convId);
       } else {
-        await api.deleteChat(selectedId);
+        await api.deleteChat(convId);
       }
-      clearActiveChat();
+      clearActiveChat(convId);
+      await loadConversations();
     } catch (err) {
       const message = err?.message || 'Failed to delete chat';
-      if (showGroupSettings) {
-        setGroupActionError(message);
-      } else {
-        setListError(message);
-      }
+      setChatActionError(message);
+      setListError(message);
+      if (showGroupSettings) setGroupActionError(message);
     } finally {
       setDeletingChat(false);
     }
@@ -793,7 +798,10 @@ useEffect(() => {
                 <button
                   type="button"
                   className="chat-menu-btn"
-                  onClick={() => setShowChatMenu((open) => !open)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowChatMenu((open) => !open);
+                  }}
                   title="Chat options"
                   aria-label="Chat options"
                   aria-expanded={showChatMenu}
@@ -806,13 +814,20 @@ useEffect(() => {
                   </svg>
                 </button>
                 {showChatMenu && (
-                  <div className="chat-menu-dropdown" role="menu">
+                  <div
+                    className="chat-menu-dropdown"
+                    role="menu"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       type="button"
                       className="chat-menu-item chat-menu-item--danger"
                       role="menuitem"
                       disabled={deletingChat}
-                      onClick={handleDeleteChat}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChat();
+                      }}
                     >
                       {isOnlyGroupAdmin
                         ? 'Delete group'
@@ -824,6 +839,9 @@ useEffect(() => {
                 )}
               </div>
             </header>
+            {chatActionError && (
+              <div className="chat-action-error" role="alert">{chatActionError}</div>
+            )}
             {showGroupSettings && isGroup && (
               <div className="group-settings-backdrop" onClick={() => setShowGroupSettings(false)}>
                 <div className="group-settings-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Group settings">
