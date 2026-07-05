@@ -161,3 +161,37 @@ export async function deleteChat(conversationId) {
   if (!res.ok) throw new Error(data.error || 'Failed to delete chat');
   return data;
 }
+
+export async function getStatuses() {
+  const res = await fetch(`${API}/status`, { headers: headers() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to load statuses');
+  return data;
+}
+
+
+export async function uploadStatus(file) {
+  const t = getToken();
+  const formData = new FormData();
+  formData.append('media', file);
+  const res = await fetch(`${API}/status`, {
+    method: 'POST',
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+    body: formData,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to upload status');
+  return data;
+}
+
+export async function deleteStatus(id) {
+  const res = await fetch(`${API}/status/${id}`, {
+    method: 'DELETE',
+    headers: headers(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to delete chat');
+  return data;
+}
+  if (!res.ok) throw new Error(data.error || 'Failed to delete status');
+  return data;

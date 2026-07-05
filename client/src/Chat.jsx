@@ -5,6 +5,8 @@ import Avatar from './Avatar';
 import GroupAvatar from './GroupAvatar';
 import { useVoiceCall } from './useVoiceCall';
 import VoiceCallOverlay from './VoiceCallOverlay';
+import StatusBar from './StatusBar';
+import StatusPage from './StatusPage';
 
 function convTitle(conv) {
   if (!conv) return '';
@@ -39,6 +41,9 @@ export default function Chat({ user, onLogout }) {
   const [groupActionLoading, setGroupActionLoading] = useState(false);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [deletingChat, setDeletingChat] = useState(false);
+const [statuses, setStatuses] = useState([]);
+const [selectedStatuses, setSelectedStatuses] = useState(null);
+
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const chatMenuRef = useRef(null);
@@ -137,6 +142,14 @@ export default function Chat({ user, onLogout }) {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  const loadStatuses = useCallback(() => {
+  return api.getStatuses().then(setStatuses).catch((err) => console.error(err));
+}, []);
+
+useEffect(() => {
+  loadStatuses();
+}, [loadStatuses]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -524,6 +537,15 @@ export default function Chat({ user, onLogout }) {
   return (
     <div className={layoutClass}>
       <VoiceCallOverlay voice={voice} peerUser={other} />
+      {selectedStatuses && (
+  <StatusPage
+    statuses={selectedStatuses}
+    onClose={() => setSelectedStatuses(null)}
+    currentUserId={user.id}
+    setStatuses={setStatuses}
+    setSelectedStatuses={setSelectedStatuses}
+  />
+)}
       <aside className="sidebar">
         <header className="sidebar-header">
           <div className="brand">
@@ -658,6 +680,12 @@ export default function Chat({ user, onLogout }) {
                 </button>
               </div>
             </div>
+            <StatusBar
+  statuses={statuses}
+  currentUser={user}
+  onRefresh={loadStatuses}
+  onOpen={(group) => setSelectedStatuses(group)}
+/>
             {listError && <div key="list-error" className="sidebar-error">{listError}</div>}
             <div className="conversation-list">
               {conversations.map((c) => (
