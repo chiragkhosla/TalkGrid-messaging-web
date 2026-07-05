@@ -1,7 +1,7 @@
 {
-  "name": "whatsapp-like-chat",
+  "name": "TalkGrid",
   "version": "1.0.0",
-  "description": "Full-stack WhatsApp-like chat application",
+  "description": "Full-stack chat application",
   "private": true,
   "scripts": {
     "server": "node server/index.js",

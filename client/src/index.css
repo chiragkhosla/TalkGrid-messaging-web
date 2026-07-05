@@ -1193,6 +1193,75 @@ a {
   box-shadow: 0 0 16px var(--accent-glow);
 }
 
+.chat-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.chat-menu-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--input-bg);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, box-shadow 0.2s;
+}
+
+.chat-menu-btn:hover,
+.chat-menu-btn[aria-expanded='true'] {
+  background: var(--hover-strong);
+  color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.chat-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px var(--shadow-lg);
+  z-index: 40;
+}
+
+.chat-menu-item {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chat-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.chat-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-menu-item--danger {
+  color: #f87171;
+}
+
+.chat-menu-item--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+}
+
 .group-settings-backdrop {
   position: absolute;
   inset: 0;

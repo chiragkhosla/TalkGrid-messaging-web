@@ -151,3 +151,13 @@ export async function deleteGroup(conversationId) {
   if (!res.ok) throw new Error(data.error || 'Failed to delete group');
   return data;
 }
+
+export async function deleteChat(conversationId) {
+  const res = await fetch(`${API}/conversations/${conversationId}/me`, {
+    method: 'DELETE',
+    headers: headers(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Failed to delete chat');
+  return data;
+}

@@ -37,8 +37,11 @@ export default function Chat({ user, onLogout }) {
   const [showGroupSettings, setShowGroupSettings] = useState(false);
   const [groupActionError, setGroupActionError] = useState('');
   const [groupActionLoading, setGroupActionLoading] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [deletingChat, setDeletingChat] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const chatMenuRef = useRef(null);
 
   const isUserOnline = useCallback((userId) => {
     if (userId == null || userId === '') return false;
@@ -51,6 +54,17 @@ export default function Chat({ user, onLogout }) {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
+
+  useEffect(() => {
+    if (!showChatMenu) return;
+    const onPointerDown = (e) => {
+      if (chatMenuRef.current && !chatMenuRef.current.contains(e.target)) {
+        setShowChatMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showChatMenu]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -133,6 +147,7 @@ export default function Chat({ user, onLogout }) {
       setShowGroupSettings(false);
       return;
     }
+    setShowChatMenu(false);
     setLoading(true);
     api.getConversation(selectedId).then((data) => {
       setCurrentConv(data);
@@ -212,12 +227,16 @@ export default function Chat({ user, onLogout }) {
         if (isMobile) setMobileChatOpen(false);
       }
     };
+    const onConversationDeleted = ({ conversationId }) => {
+      onGroupRemoved({ conversationId });
+    };
     socket.on('message:new', onNewMessage);
     socket.on('conversation:new', onNewConversation);
     socket.on('message:deleted', onDeletedMessage);
     socket.on('group:updated', onGroupUpdated);
     socket.on('group:removed', onGroupRemoved);
     socket.on('group:deleted', onGroupDeleted);
+    socket.on('conversation:deleted', onConversationDeleted);
     return () => {
       socket.off('message:new', onNewMessage);
       socket.off('conversation:new', onNewConversation);
@@ -225,6 +244,7 @@ export default function Chat({ user, onLogout }) {
       socket.off('group:updated', onGroupUpdated);
       socket.off('group:removed', onGroupRemoved);
       socket.off('group:deleted', onGroupDeleted);
+      socket.off('conversation:deleted', onConversationDeleted);
     };
   }, [selectedId, loadConversations, isMobile]);
 
@@ -375,6 +395,10 @@ export default function Chat({ user, onLogout }) {
   const other = isGroup ? null : currentConv?.otherUser;
   const memberCount = isGroup ? (currentConv?.members?.length ?? 0) : 0;
   const isGroupAdmin = isGroup && currentConv?.myRole === 'admin';
+  const hasOtherGroupAdmin = isGroup && (currentConv?.members || []).some(
+    (m) => m.role === 'admin' && m.id !== user.id
+  );
+  const isOnlyGroupAdmin = isGroupAdmin && !hasOtherGroupAdmin;
 
   const handlePromoteMember = async (memberId) => {
     if (!selectedId || !isGroupAdmin) return;
@@ -430,6 +454,49 @@ export default function Chat({ user, onLogout }) {
     }
   };
 
+  const clearActiveChat = () => {
+    setConversations((prev) => prev.filter((c) => c.id !== selectedId));
+    setSelectedId(null);
+    setCurrentConv(null);
+    setMessages([]);
+    setShowGroupSettings(false);
+    setShowChatMenu(false);
+    if (isMobile) setMobileChatOpen(false);
+  };
+
+  const handleDeleteChat = async () => {
+    if (!selectedId || deletingChat) return;
+    const deleteEntireGroup = isOnlyGroupAdmin;
+    const confirmMessage = deleteEntireGroup
+      ? 'Delete this group permanently for all members? This cannot be undone.'
+      : isGroup
+        ? 'Leave this group? You will no longer receive messages from it.'
+        : 'Delete this chat from your account? The other person will still have the conversation.';
+    if (!window.confirm(confirmMessage)) return;
+
+    setListError('');
+    setGroupActionError('');
+    setDeletingChat(true);
+    setShowChatMenu(false);
+    try {
+      if (deleteEntireGroup) {
+        await api.deleteGroup(selectedId);
+      } else {
+        await api.deleteChat(selectedId);
+      }
+      clearActiveChat();
+    } catch (err) {
+      const message = err?.message || 'Failed to delete chat';
+      if (showGroupSettings) {
+        setGroupActionError(message);
+      } else {
+        setListError(message);
+      }
+    } finally {
+      setDeletingChat(false);
+    }
+  };
+
   const switchToConversation = useCallback((convId) => {
     if (convId == null) return;
     setListError('');
@@ -466,7 +533,7 @@ export default function Chat({ user, onLogout }) {
               </svg>
             </div>
             <div className="brand-text">
-              <h1>Nexus</h1>
+              <h1>TalkGrid</h1>
               <span className="brand-tagline">Messages</span>
             </div>
           </div>
@@ -630,7 +697,7 @@ export default function Chat({ user, onLogout }) {
                 </defs>
               </svg>
             </div>
-            <h2>Welcome to Nexus</h2>
+            <h2>Welcome to TalkGrid</h2>
             <p>Select a conversation or start a new chat to begin messaging</p>
             <div className="empty-chat-hints">
               <span className="hint-chip">Direct messages</span>
@@ -684,7 +751,7 @@ export default function Chat({ user, onLogout }) {
                 <button
                   type="button"
                   className="chat-settings-btn"
-                  onClick={() => { setShowGroupSettings(true); setGroupActionError(''); }}
+                  onClick={() => { setShowGroupSettings(true); setGroupActionError(''); setShowChatMenu(false); }}
                   title="Group settings"
                   aria-label="Group settings"
                 >
@@ -694,6 +761,40 @@ export default function Chat({ user, onLogout }) {
                   </svg>
                 </button>
               )}
+              <div className="chat-menu-wrap" ref={chatMenuRef}>
+                <button
+                  type="button"
+                  className="chat-menu-btn"
+                  onClick={() => setShowChatMenu((open) => !open)}
+                  title="Chat options"
+                  aria-label="Chat options"
+                  aria-expanded={showChatMenu}
+                  aria-haspopup="menu"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" aria-hidden>
+                    <circle cx="12" cy="5" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="12" cy="19" r="2" />
+                  </svg>
+                </button>
+                {showChatMenu && (
+                  <div className="chat-menu-dropdown" role="menu">
+                    <button
+                      type="button"
+                      className="chat-menu-item chat-menu-item--danger"
+                      role="menuitem"
+                      disabled={deletingChat}
+                      onClick={handleDeleteChat}
+                    >
+                      {isOnlyGroupAdmin
+                        ? 'Delete group'
+                        : isGroup
+                          ? 'Leave group'
+                          : 'Delete chat'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </header>
             {showGroupSettings && isGroup && (
               <div className="group-settings-backdrop" onClick={() => setShowGroupSettings(false)}>

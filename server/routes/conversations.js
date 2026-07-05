@@ -368,6 +368,60 @@ function createRouter(io) {
     }
   });
 
+  router.delete('/:id/me', (req, res) => {
+    try {
+      const myId = Number(req.user.id);
+      const convId = parseInt(req.params.id, 10);
+      if (Number.isNaN(convId)) {
+        return res.status(400).json({ error: 'Invalid id' });
+      }
+
+      const member = db.prepare(
+        'SELECT role FROM conversation_members WHERE conversation_id = ? AND user_id = ?'
+      ).get(convId, myId);
+      if (!member) return res.status(404).json({ error: 'Conversation not found' });
+
+      const isGroup = isGroupConversation(convId);
+      if (isGroup) {
+        const role = member.role ?? member.ROLE;
+        if (role === 'admin') {
+          const otherAdmin = db.prepare(`
+            SELECT user_id FROM conversation_members
+            WHERE conversation_id = ? AND user_id != ? AND role = 'admin'
+          `).get(convId, myId);
+          if (!otherAdmin) {
+            return res.status(400).json({
+              error: 'Promote another admin before leaving, or delete the group from settings',
+            });
+          }
+        }
+      }
+
+      db.prepare(
+        'DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?'
+      ).run(convId, myId);
+
+      const remaining = db.prepare(
+        'SELECT COUNT(*) as c FROM conversation_members WHERE conversation_id = ?'
+      ).get(convId);
+      const remainingCount = Number(remaining?.c ?? remaining?.C ?? 0);
+      if (remainingCount === 0) {
+        db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(convId);
+        db.prepare('DELETE FROM conversations WHERE id = ?').run(convId);
+      }
+
+      io.to(`user:${String(myId)}`).emit('conversation:deleted', { conversationId: convId });
+      if (isGroup && remainingCount > 0) {
+        notifyGroupUpdate(io, convId);
+      }
+
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /:id/me error:', err);
+      return res.status(500).json({ error: err.message || 'Failed to delete chat' });
+    }
+  });
+
   router.delete('/:id', (req, res) => {
     try {
       const myId = Number(req.user.id);
